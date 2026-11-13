@@ -1,0 +1,90 @@
+
+services:
+
+  # Banco de dados de origem
+  postgres:
+    image: postgres:16
+    container_name: ed-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-acidentes_origem}
+      POSTGRES_USER: ${POSTGRES_USER:-ed_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Configure POSTGRES_PASSWORD no .env}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-ed_user} -d ${POSTGRES_DB:-acidentes_origem}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - ed-network
+
+  # Object Storage - Data Lake
+  minio:
+    image: soldevelo/minio:2026.7
+    container_name: ed-minio
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      MINIO_OPTS: "--console-address :9001"
+      MINIO_BROWSER: "on"
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio_data:/bitnami/minio/data
+    networks:
+      - ed-network
+    restart: unless-stopped
+
+  # Apache Spark - Master
+  spark-master:
+    image: apache/spark:3.5.6
+    container_name: ed-spark-master
+    restart: unless-stopped
+    command:
+      - /opt/spark/bin/spark-class
+      - org.apache.spark.deploy.master.Master
+      - --host
+      - spark-master
+    ports:
+      - "8080:8080"
+      - "7077:7077"
+    volumes:
+      - ./scripts:/opt/spark-apps
+      - ./lake:/opt/spark-data
+    networks:
+      - ed-network
+
+  # Apache Spark - Worker
+  spark-worker:
+    image: apache/spark:3.5.6
+    container_name: ed-spark-worker
+    restart: unless-stopped
+    command:
+      - /opt/spark/bin/spark-class
+      - org.apache.spark.deploy.worker.Worker
+      - spark://spark-master:7077
+    depends_on:
+      - spark-master
+    ports:
+      - "8081:8081"
+    environment:
+      SPARK_WORKER_CORES: 2
+      SPARK_WORKER_MEMORY: 2G
+    volumes:
+      - ./scripts:/opt/spark-apps
+      - ./lake:/opt/spark-data
+    networks:
+      - ed-network
+
+volumes:
+  postgres_data:
+  minio_data:
+
+networks:
+  ed-network:
+    driver: bridge
