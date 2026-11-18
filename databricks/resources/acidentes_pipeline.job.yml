@@ -1,4 +1,4 @@
-# Job principal: setup do catalogo + ingestao bronze.
+# Job principal: setup do catalogo (schemas + volume dos CSVs).
 # Sem cluster definido => roda em compute serverless (padrao do Databricks Free Edition).
 
 resources:
@@ -22,9 +22,3 @@ resources:
         - task_key: setup
           notebook_task:
             notebook_path: ../notebooks/00_setup.py
-
-        - task_key: bronze_acidentes
-          depends_on:
-            - task_key: setup
-          notebook_task:
-            notebook_path: ../notebooks/01_bronze_acidentes.py
