@@ -7,8 +7,6 @@ em qualquer workspace com Unity Catalog — basta trocar a variável `catalog`.
 ```
 databricks/
 ├── databricks.yml                       # configuração do bundle (variáveis e targets)
-├── resources/
-│   └── acidentes_pipeline.job.yml       # job: setup
 └── notebooks/
     └── 00_setup.py                      # cria schemas bronze/silver/gold e o volume raw
 ```
@@ -62,8 +60,10 @@ Todos os comandos `bundle` são rodados de dentro da pasta `databricks/`:
 cd databricks
 databricks bundle validate
 databricks bundle deploy
-databricks bundle run acidentes_pipeline
 ```
+
+O deploy envia os notebooks para `/Workspace/Users/<seu_email>/.bundle/projeto_ed_final/dev/files/notebooks/`.
+Abra o `00_setup` no workspace e clique em **Run all** para criar os schemas e o volume.
 
 ## 4. Enviar os CSVs para o volume
 
@@ -72,9 +72,6 @@ Da raiz do repositório:
 ```powershell
 databricks fs cp -r Datasets dbfs:/Volumes/workspace/bronze/raw/acidentes --overwrite
 ```
-
-No workspace, o job aparece em **Jobs & Pipelines** como `[dev <seu_usuario>] acidentes_pipeline`,
-e os notebooks ficam em `/Workspace/Users/<seu_email>/.bundle/projeto_ed_final/dev/`.
 
 ## Trocar catálogo ou schemas
 
