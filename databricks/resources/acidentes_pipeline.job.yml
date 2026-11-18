@@ -1,0 +1,30 @@
+# Job principal: setup do catalogo + ingestao bronze.
+# Sem cluster definido => roda em compute serverless (padrao do Databricks Free Edition).
+
+resources:
+  jobs:
+    acidentes_pipeline:
+      name: acidentes_pipeline
+
+      parameters:
+        - name: catalog
+          default: ${var.catalog}
+        - name: schema_bronze
+          default: ${var.schema_bronze}
+        - name: schema_silver
+          default: ${var.schema_silver}
+        - name: schema_gold
+          default: ${var.schema_gold}
+        - name: volume_raw
+          default: ${var.volume_raw}
+
+      tasks:
+        - task_key: setup
+          notebook_task:
+            notebook_path: ../notebooks/00_setup.py
+
+        - task_key: bronze_acidentes
+          depends_on:
+            - task_key: setup
+          notebook_task:
+            notebook_path: ../notebooks/01_bronze_acidentes.py

@@ -5,3 +5,7 @@ __pycache__/
 logs/
 lake/
 .DS_Store
+
+# Databricks
+.databricks/
+.databrickscfg
