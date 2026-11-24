@@ -47,8 +47,10 @@ Confira com `databricks --version` (precisa ser 0.218 ou mais nova).
 Crie a conta em https://www.databricks.com/learn/free-edition, copie a URL do workspace e rode:
 
 ```powershell
-databricks auth login --host https://<seu-workspace>.cloud.databricks.com
+databricks auth login --host https://<seu-workspace>.cloud.databricks.com --profile projeto-ed-final
 ```
+
+Use o perfil `projeto-ed-final` em todos os comandos abaixo para acessar o mesmo workspace.
 
 Isso abre o navegador e grava o perfil em `~/.databrickscfg` (fica fora do repositório — não commite tokens).
 
@@ -58,8 +60,8 @@ Todos os comandos `bundle` são rodados de dentro da pasta `databricks/`:
 
 ```powershell
 cd databricks
-databricks bundle validate
-databricks bundle deploy
+databricks bundle validate --profile projeto-ed-final
+databricks bundle deploy --profile projeto-ed-final
 ```
 
 O deploy envia os notebooks para `/Workspace/Users/<seu_email>/.bundle/projeto_ed_final/dev/files/notebooks/`.
@@ -70,7 +72,7 @@ Abra o `00_setup` no workspace e clique em **Run all** para criar os schemas e o
 Da raiz do repositório:
 
 ```powershell
-databricks fs cp -r Datasets dbfs:/Volumes/workspace/bronze/raw/acidentes --overwrite
+databricks fs cp -r Datasets dbfs:/Volumes/workspace/bronze/raw/acidentes --overwrite --profile projeto-ed-final
 ```
 
 ## Trocar catálogo ou schemas
@@ -78,7 +80,7 @@ databricks fs cp -r Datasets dbfs:/Volumes/workspace/bronze/raw/acidentes --over
 Sem editar arquivo:
 
 ```powershell
-databricks bundle deploy --var="catalog=meu_catalogo"
+databricks bundle deploy --var="catalog=meu_catalogo" --profile projeto-ed-final
 ```
 
 ## Observações sobre os CSVs da PRF
