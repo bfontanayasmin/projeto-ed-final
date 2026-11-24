@@ -93,13 +93,21 @@ databricks bundle deploy --var="catalog=meu_catalogo" --profile projeto-ed-final
 notebook é executado manualmente.** Antes de criar os objetos:
 
 1. Abra o notebook `00_setup` publicado pelo deploy.
-2. Execute somente a primeira célula Python, que cria os widgets.
-3. No widget `catalog`, informe `meu_catalogo`. Se também alterou schemas ou
-   volume, preencha `schema_bronze`, `schema_silver`, `schema_gold` e `volume_raw`
-   com os mesmos valores escolhidos para o ambiente.
-4. Execute as células seguintes, de criação dos schemas e do volume, e depois a
+2. Execute somente a primeira célula Python, que cria os widgets e lê seus
+   valores para as variáveis Python. Não execute ainda as células seguintes.
+3. Nas configurações dos widgets, selecione **Do Nothing** para o comportamento
+   ao alterar um widget. Assim, preencher um campo não dispara a execução do
+   notebook antes de todos os valores estarem definidos.
+4. No widget `catalog`, informe `meu_catalogo`. Preencha também todos os demais
+   widgets com os valores desejados: `schema_bronze`, `schema_silver`,
+   `schema_gold` e `volume_raw`.
+5. **Execute novamente a primeira célula Python** para reler os widgets e
+   atualizar as variáveis `catalog`, `schema_bronze`, `schema_silver`,
+   `schema_gold` e `volume_raw`. Com **Do Nothing**, alterar um widget sozinho
+   não atualiza essas variáveis.
+6. Execute as células seguintes, de criação dos schemas e do volume, e depois a
    célula que prepara e exibe o diretório de upload.
-5. Confira os nomes dos schemas e o caminho impressos pelo notebook antes de
+7. Confira os nomes dos schemas e o caminho impressos pelo notebook antes de
    enviar os arquivos.
 
 Por exemplo, usando `meu_catalogo` e mantendo `bronze` e `raw`, o comando de
