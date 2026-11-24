@@ -2,7 +2,9 @@
 
 Bundle do Databricks (Databricks Asset Bundles) do projeto. Pensado para o
 **Databricks Free Edition** (compute serverless, catálogo `workspace`), mas funciona
-em qualquer workspace com Unity Catalog — basta trocar a variável `catalog`.
+em outros workspaces com Unity Catalog. Para usar outro catálogo ou outros schemas,
+configure as variáveis do bundle, os widgets do notebook e o caminho de upload
+conforme a seção **Trocar catálogo ou schemas**.
 
 ```
 databricks/
@@ -65,7 +67,11 @@ databricks bundle deploy --profile projeto-ed-final
 ```
 
 O deploy envia os notebooks para `/Workspace/Users/<seu_email>/.bundle/projeto_ed_final/dev/files/notebooks/`.
-Abra o `00_setup` no workspace e clique em **Run all** para criar os schemas e o volume.
+Com os valores padrão (`workspace`, `bronze`, `silver`, `gold` e `raw`), abra o
+`00_setup` no workspace e clique em **Run all** para criar os schemas e o volume.
+Se tiver alterado catálogo, schemas ou volume, configure primeiro os widgets como
+explicado abaixo. O catálogo escolhido precisa existir, e seu usuário precisa ter
+as permissões necessárias para criar schemas e volumes.
 
 ## 4. Enviar os CSVs para o volume
 
@@ -77,11 +83,35 @@ databricks fs cp -r Datasets dbfs:/Volumes/workspace/bronze/raw/acidentes --over
 
 ## Trocar catálogo ou schemas
 
-Sem editar arquivo:
+Você pode alterar as variáveis do bundle no deploy, sem editar o arquivo:
 
 ```powershell
 databricks bundle deploy --var="catalog=meu_catalogo" --profile projeto-ed-final
 ```
+
+**As variáveis do bundle não preenchem automaticamente os widgets quando o
+notebook é executado manualmente.** Antes de criar os objetos:
+
+1. Abra o notebook `00_setup` publicado pelo deploy.
+2. Execute somente a primeira célula Python, que cria os widgets.
+3. No widget `catalog`, informe `meu_catalogo`. Se também alterou schemas ou
+   volume, preencha `schema_bronze`, `schema_silver`, `schema_gold` e `volume_raw`
+   com os mesmos valores escolhidos para o ambiente.
+4. Execute as células seguintes, de criação dos schemas e do volume, e depois a
+   célula que prepara e exibe o diretório de upload.
+5. Confira os nomes dos schemas e o caminho impressos pelo notebook antes de
+   enviar os arquivos.
+
+Por exemplo, usando `meu_catalogo` e mantendo `bronze` e `raw`, o comando de
+upload, executado da raiz do repositório, fica:
+
+```powershell
+databricks fs cp -r Datasets dbfs:/Volumes/meu_catalogo/bronze/raw/acidentes --overwrite --profile projeto-ed-final
+```
+
+Se mudar o schema Bronze ou o volume, ajuste também esses trechos do caminho.
+Use o diretório exibido pelo notebook, acrescentando o prefixo `dbfs:` ao caminho
+`/Volumes/...` para o comando da CLI.
 
 ## Observações sobre os CSVs da PRF
 
