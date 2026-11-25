@@ -1,0 +1,4 @@
+# Dependências para desenvolver e testar os jobs fora do container.
+# Dentro do Docker os jobs rodam com o PySpark que já vem na imagem do Spark.
+pyspark==3.5.6
+psycopg2-binary==2.9.10
