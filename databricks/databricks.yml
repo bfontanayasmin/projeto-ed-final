@@ -1,0 +1,47 @@
+# Databricks Asset Bundle - Projeto ED Final (acidentes PRF 2023-2026)
+#
+# Uso rapido (ver databricks/README.md):
+#   databricks auth login --host <URL_DO_WORKSPACE>
+#   databricks bundle validate
+#   databricks bundle deploy
+#   Depois rode o notebook 00_setup no workspace.
+
+bundle:
+  name: projeto_ed_final
+
+# Jobs e pipelines futuros: criar arquivos .yml em resources/
+include:
+  - resources/*.yml
+
+variables:
+  catalog:
+    description: Catalogo do Unity Catalog (no Free Edition o padrao e "workspace")
+    default: workspace
+  schema_bronze:
+    description: Schema da camada bronze (dado bruto)
+    default: bronze
+  schema_silver:
+    description: Schema da camada silver (dado limpo e tipado)
+    default: silver
+  schema_gold:
+    description: Schema da camada gold (agregacoes para analise)
+    default: gold
+  volume_raw:
+    description: Volume onde ficam os CSVs originais
+    default: raw
+
+targets:
+  # Ambiente de desenvolvimento: cada integrante faz deploy na propria pasta
+  # (/Workspace/Users/<seu_email>/.bundle/...) e os jobs ficam com prefixo [dev <usuario>].
+  dev:
+    mode: development
+    default: true
+    # host: https://<seu-workspace>.cloud.databricks.com
+    # Deixe o host comentado e use "databricks auth login" para cada um usar o proprio workspace.
+
+  # Ambiente "oficial" do grupo (opcional). Descomente e ajuste o host quando houver um workspace compartilhado.
+  # prod:
+  #   mode: production
+  #   workspace:
+  #     host: https://<workspace-do-grupo>.cloud.databricks.com
+  #     root_path: /Workspace/Shared/.bundle/${bundle.name}/${bundle.target}
