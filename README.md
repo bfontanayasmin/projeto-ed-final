@@ -1,6 +1,24 @@
 # projeto-ed-final
 
-Projeto final da disciplina de Estrutura de Dados: um ambiente local de dados, montado com Docker, para processar os registros de acidentes nas rodovias federais brasileiras (2023 a 2026, dados da PRF).
+Projeto final da disciplina de Engenharia de Dados: um ambiente local de dados, montado com Docker, para processar os registros de acidentes nas rodovias federais brasileiras (2023 a 2026, dados da PRF).
+
+## Objetivo
+
+Construir uma pipeline de dados sobre acidentes nas rodovias federais brasileiras, desde a organização dos registros em um banco normalizado até a disponibilização de informações para análise. O projeto busca analisar a ocorrência e a gravidade dos acidentes em diferentes períodos e localidades.
+
+## Fluxo planejado
+
+```mermaid
+flowchart TD
+    A["CSV públicos da PRF"] --> B["PostgreSQL: banco normalizado"]
+    B --> C["MinIO: Landing em CSV"]
+    C --> D["MinIO: Bronze em Delta"]
+    D --> E["MinIO: Silver em Delta"]
+    E --> F["MinIO: Gold em Delta"]
+    F --> G["Consumo e dashboard"]
+```
+
+O Apache Spark será responsável pelo processamento dos dados entre as camadas. O Databricks está previsto para disponibilizar os dados tratados para consumo; a integração com o MinIO está em definição. A ferramenta de orquestração e o agendamento serão documentados após a definição do grupo.
 
 O ambiente junta quatro peças:
 
@@ -9,7 +27,7 @@ O ambiente junta quatro peças:
 - **Apache Spark:** cluster com um master e um worker para o processamento.
 - **Datasets:** os CSVs de acidentes, já versionados no repositório.
 
-> **Status:** pré-configuração. O `docker-compose.yml` já sobe os serviços, mas o `Dockerfile` e o `requirements.txt` ainda estão vazios, e a pasta `scripts/` (onde vão ficar os jobs Spark) ainda não existe.
+> **Status:** em desenvolvimento. O `docker-compose.yml` configura os serviços, e os scripts SQL de normalização já estão no repositório. O `Dockerfile` e o `requirements.txt` ainda estão vazios, e os jobs de processamento da pipeline serão adicionados nas próximas etapas.
 
 ## Estrutura do projeto
 
@@ -25,9 +43,14 @@ projeto-ed-final/
 │   ├── acidentes2024/acidentes2024.csv
 │   ├── acidentes2025/acidentes2025.csv
 │   └── acidentes2026/acidentes2026.csv
-├── scripts/             # (a criar) jobs Spark, montada em /opt/spark-apps
+├── docs/                # Documentação do projeto
+│   └── guia_dbeaver_normalizacao.md
+├── scripts/             # Montada em /opt/spark-apps; jobs Spark serão adicionados
+│   └── sql/             # Scripts de criação, carga e validação do banco normalizado
 └── lake/                # (ignorada no git) dados locais, montada em /opt/spark-data
 ```
+
+Os scripts SQL de criação, carga e validação do banco normalizado estão em `scripts/sql/`. O modelo e as instruções de execução estão no [Guia de normalização e execução no DBeaver](docs/guia_dbeaver_normalizacao.md).
 
 ## Serviços
 
@@ -160,7 +183,31 @@ O caminho acima supõe que o CSV foi copiado para `lake/`, que é a pasta montad
 ## Próximos passos
 
 - [ ] Preencher o `Dockerfile` e o `requirements.txt`
-- [ ] Criar a pasta `scripts/` com os jobs Spark
+- [ ] Adicionar os jobs Spark à pasta `scripts/`
 - [ ] Configurar o Spark para ler e gravar no MinIO (`s3a://`, `hadoop-aws`)
 - [ ] Carregar os CSVs no PostgreSQL de origem
 - [ ] Adicionar um `.env.example` ao repositório
+
+- [ ] Implementar a extração do banco de origem para a Landing
+- [ ] Implementar e validar as camadas Bronze, Silver e Gold em Delta Lake
+- [ ] Implementar o histórico das dimensões com SCD tipo 2 e a carga incremental dos fatos
+- [ ] Configurar a orquestração e o agendamento da pipeline
+- [ ] Definir quatro KPIs e duas métricas e construir o dashboard de uma página
+- [ ] Validar a integração dos dados tratados com o Databricks
+- [ ] Publicar a documentação com MkDocs Material
+
+## Documentação
+
+O [guia de normalização e execução no DBeaver](docs/guia_dbeaver_normalizacao.md) documenta a preparação do banco de origem. A documentação completa será organizada com MkDocs Material, e o link do site será incluído após a publicação.
+
+## Equipe
+
+- Evandro Luiz
+- Guilherme Brognoli
+- Guilherme Victor Machado
+- Maicou Hahn Fortuna
+- Yasmin Bez Fontana
+
+## Referência de organização e documentação
+
+[Modelo disponibilizado pelo professor para README, estrutura de pastas e MkDocs](https://github.com/jlsilva01/projeto-ed-satc).
