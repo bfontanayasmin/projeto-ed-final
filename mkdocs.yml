@@ -1,0 +1,62 @@
+site_name: Acidentes nas Rodovias Federais
+site_description: Projeto final de Engenharia de Dados com dados públicos da PRF.
+repo_name: bfontanayasmin/projeto-ed-final
+repo_url: https://github.com/bfontanayasmin/projeto-ed-final
+edit_uri: edit/main/docs/
+docs_dir: docs
+
+theme:
+  name: material
+  language: pt
+  palette:
+    - scheme: default
+      primary: indigo
+      accent: teal
+      toggle:
+        icon: material/brightness-7
+        name: Alternar para modo escuro
+    - scheme: slate
+      primary: indigo
+      accent: teal
+      toggle:
+        icon: material/brightness-4
+        name: Alternar para modo claro
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.top
+    - navigation.footer
+    - content.code.copy
+  icon:
+    repo: fontawesome/brands/github
+
+nav:
+  - Início: index.md
+  - Dataset: dataset.md
+  - Banco de origem:
+      - Visão geral: banco-origem.md
+      - Guia de normalização: guia_dbeaver_normalizacao.md
+  - Arquitetura e pipeline: arquitetura.md
+  - Equipe: equipe.md
+  - Referências: referencias.md
+
+plugins:
+  - search
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - pymdownx.details
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+
+extra_css:
+  - stylesheets/extra.css
+
+extra:
+  generator: false
+

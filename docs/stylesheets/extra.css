@@ -1,0 +1,40 @@
+/* Ajustes visuais da documentação; conteúdo e navegação usam o Material. */
+:root {
+  --md-primary-fg-color: #263c68;
+  --md-accent-fg-color: #008577;
+}
+.md-typeset h1 {
+  font-weight: 700;
+  letter-spacing: -0.035em;
+}
+.md-typeset h2 {
+  font-weight: 650;
+}
+.project-intro {
+  padding: 1.6rem;
+  margin-bottom: 1.4rem;
+  border: 1px solid var(--md-default-fg-color--lightest);
+  border-left: 5px solid var(--md-accent-fg-color);
+  border-radius: 0.6rem;
+  background: var(--md-code-bg-color);
+}
+.project-intro .project-kicker {
+  margin-top: 0;
+  color: var(--md-accent-fg-color);
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+.project-intro h1 {
+  margin: 0 0 0.65rem;
+  color: var(--md-default-fg-color);
+  line-height: 1.15;
+}
+.project-intro p:last-child {
+  margin-bottom: 0;
+}
+.md-typeset table:not([class]) th {
+  background: var(--md-code-bg-color);
+}
+
