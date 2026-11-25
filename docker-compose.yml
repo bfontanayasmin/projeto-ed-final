@@ -11,14 +11,21 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-ed_user}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Configure POSTGRES_PASSWORD no .env}
     ports:
-      - "5432:5432"
+      # 5090 no host: a 5432 ja e usada pelo PostgreSQL local do Windows (pratix-postgresql).
+      # Dentro da rede do Docker o Spark continua usando postgres:5432.
+      - "${POSTGRES_HOST_PORT:-5090}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      # CSVs da PRF, lidos pelo COPY do 02_carga_staging.sql
+      - ./Datasets:/datasets:ro
+      # Roda 01_ddl -> 02_carga -> 02_etl -> 03_validacao apenas na primeira subida (volume vazio)
+      - ./scripts/sql:/docker-entrypoint-initdb.d:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-ed_user} -d ${POSTGRES_DB:-acidentes_origem}"]
+      # -h 127.0.0.1: so fica "healthy" depois da carga inicial terminar
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U ${POSTGRES_USER:-ed_user} -d ${POSTGRES_DB:-acidentes_origem}"]
       interval: 10s
       timeout: 5s
-      retries: 5
+      retries: 30
     networks:
       - ed-network
 
@@ -31,18 +38,29 @@ services:
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
       MINIO_OPTS: "--console-address :9001"
       MINIO_BROWSER: "on"
+      # Buckets da arquitetura medalhão, criados na subida se não existirem
+      MINIO_DEFAULT_BUCKETS: "bronze,silver,gold"
     ports:
       - "9000:9000"
       - "9001:9001"
     volumes:
       - minio_data:/bitnami/minio/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs http://localhost:9000/minio/health/live || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
     networks:
       - ed-network
     restart: unless-stopped
 
   # Apache Spark - Master
+  # Imagem própria (Dockerfile): apache/spark:3.5.6 + hadoop-aws (s3a/MinIO) + driver JDBC do Postgres
   spark-master:
-    image: apache/spark:3.5.6
+    build: .
+    image: ed-spark:3.5.6
+    # Imagem local: sempre construir, nunca tentar baixar do Docker Hub
+    pull_policy: build
     container_name: ed-spark-master
     restart: unless-stopped
     command:
@@ -50,9 +68,24 @@ services:
       - org.apache.spark.deploy.master.Master
       - --host
       - spark-master
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
     ports:
       - "8080:8080"
       - "7077:7077"
+    environment: &spark-env
+      # Credenciais do MinIO lidas pelo s3a (EnvironmentVariableCredentialsProvider)
+      AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER}
+      AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD}
+      # Conexão com o Postgres de origem, lida pelos jobs em /opt/spark-apps
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: ${POSTGRES_DB:-acidentes_origem}
+      POSTGRES_USER: ${POSTGRES_USER:-ed_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     volumes:
       - ./scripts:/opt/spark-apps
       - ./lake:/opt/spark-data
@@ -61,7 +94,9 @@ services:
 
   # Apache Spark - Worker
   spark-worker:
-    image: apache/spark:3.5.6
+    image: ed-spark:3.5.6
+    # Usa a imagem construida pelo spark-master
+    pull_policy: never
     container_name: ed-spark-worker
     restart: unless-stopped
     command:
@@ -73,6 +108,7 @@ services:
     ports:
       - "8081:8081"
     environment:
+      <<: *spark-env
       SPARK_WORKER_CORES: 2
       SPARK_WORKER_MEMORY: 2G
     volumes:
