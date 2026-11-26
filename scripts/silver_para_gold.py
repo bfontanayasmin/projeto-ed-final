@@ -1,22 +1,40 @@
-"""Camada gold: indicadores prontos para consumo (dashboards, SQL, Databricks),
-calculados a partir das 3 tabelas da silver.
+"""Camada gold em OBT (One Big Table): junta as 3 tabelas da silver numa única
+tabela larga, no menor grão disponível, pronta para dashboards, SQL e Databricks.
 
 Origem:  s3a://silver/prf/{acidente,veiculo,envolvido}/
-Destino: s3a://gold/prf/<indicador>/
+Destino: s3a://gold/prf/obt_acidentes/        (particionado por ano)
 
-Indicadores:
-  indicadores_mensais_uf  acidentes, vítimas e veículos por ano, mês e UF
-  acidentes_por_causa     acidentes e gravidade por ano e causa
-  acidentes_por_tipo      acidentes e gravidade por ano e tipo de acidente
-  acidentes_por_horario   acidentes por dia da semana, hora e fase do dia
-  condicoes_via           acidentes por clima, tipo de pista e fase do dia
-  trechos_criticos        trechos de 10 km de cada BR/UF, com ranking por mortos
-  perfil_vitimas          pessoas por ano, tipo de envolvido, faixa etária, sexo e estado físico
-  veiculos_envolvidos     veículos por ano, tipo e idade do veículo
+Grão: 1 linha por pessoa envolvida, com os dados do acidente e do veículo
+repetidos em cada linha. Para nada se perder, também entram:
+  * veículos sem nenhuma pessoa registrada  -> 1 linha, colunas de pessoa nulas
+  * acidentes sem veículo e sem pessoa      -> 1 linha, colunas de veículo e pessoa nulas
+A coluna tipo_registro diz qual é o caso: 'pessoa', 'veiculo_sem_pessoa'
+ou 'acidente_sem_veiculo'.
 
-Medidas que se repetem:
-  indice_mortalidade      mortos a cada 100 acidentes
-  pct_acidentes_fatais    % de acidentes com pelo menos 1 morto
+Como somar sem contar duas vezes
+--------------------------------
+Os dados do acidente se repetem em todas as linhas dele, e os do veículo em
+todas as linhas do veículo. Por isso a OBT tem colunas de contagem 0/1:
+  conta_acidente  1 em exatamente uma linha de cada acidente
+  conta_veiculo   1 em exatamente uma linha de cada veículo
+  conta_pessoa    1 em cada linha que é uma pessoa
+  pessoa_ilesa, pessoa_ferido_leve, pessoa_ferido_grave, pessoa_obito
+                  1 quando a pessoa da linha está nesse estado (0 nas demais)
+
+Exemplos (Spark SQL / Databricks):
+  -- acidentes, mortos e índice de mortalidade por ano e UF
+  SELECT ano, uf,
+         SUM(conta_acidente)                              AS qtd_acidentes,
+         SUM(pessoa_obito)                                AS mortos,
+         ROUND(SUM(pessoa_obito) * 100.0 / SUM(conta_acidente), 2) AS indice_mortalidade
+  FROM obt_acidentes GROUP BY ano, uf;
+
+  -- veículos por tipo
+  SELECT tipo_veiculo, SUM(conta_veiculo) AS qtd_veiculos FROM obt_acidentes GROUP BY tipo_veiculo;
+
+  -- trechos críticos (faixas de 10 km)
+  SELECT uf, br, trecho_km_inicio, SUM(conta_acidente) AS acidentes, SUM(pessoa_obito) AS mortos
+  FROM obt_acidentes WHERE br IS NOT NULL GROUP BY uf, br, trecho_km_inicio ORDER BY mortos DESC;
 
 Execução (de dentro do WSL/Ubuntu, na pasta do projeto):
     docker exec ed-spark-master /opt/spark/bin/spark-submit \
@@ -28,96 +46,131 @@ from pyspark.sql import functions as F
 
 SILVER = "s3a://silver/prf"
 GOLD = "s3a://gold/prf"
+NOME_OBT = "obt_acidentes"
 
-
-def medidas_acidente():
-    """Agregações padrão sobre a silver de acidente."""
-    return [
-        F.count("*").alias("qtd_acidentes"),
-        F.sum(F.col("acidente_fatal").cast("int")).alias("acidentes_fatais"),
-        F.sum("qtd_veiculos").alias("qtd_veiculos"),
-        F.sum("qtd_envolvidos").alias("qtd_envolvidos"),
-        F.sum("ilesos").alias("ilesos"),
-        F.sum("feridos_leves").alias("feridos_leves"),
-        F.sum("feridos_graves").alias("feridos_graves"),
-        F.sum("mortos").alias("mortos"),
-    ]
-
-
-def com_taxas(df):
-    return (df
-            .withColumn("indice_mortalidade", F.round(F.col("mortos") * 100.0 / F.col("qtd_acidentes"), 2))
-            .withColumn("pct_acidentes_fatais",
-                        F.round(F.col("acidentes_fatais") * 100.0 / F.col("qtd_acidentes"), 2)))
-
-
-def gravar(df, nome):
-    destino = f"{GOLD}/{nome}"
-    df = df.withColumn("_atualizado_em", F.current_timestamp())
-    # Tabelas pequenas: 1 arquivo por indicador facilita o envio ao Databricks
-    df.coalesce(1).write.mode("overwrite").parquet(destino)
-    total = df.sparkSession.read.parquet(destino).count()
-    print(f"[gold] {nome:<22} -> {destino} ({total} linhas)")
+COLUNAS_OBT = [
+    # identificação e tipo da linha
+    "id_acidente", "id_veiculo", "id_pessoa", "tipo_registro",
+    # contadores para somar sem duplicar
+    "conta_acidente", "conta_veiculo", "conta_pessoa",
+    "pessoa_ilesa", "pessoa_ferido_leve", "pessoa_ferido_grave", "pessoa_obito",
+    # quando
+    "data_acidente", "horario", "ano", "mes", "dia_semana_num", "dia_semana", "hora", "fase_dia",
+    # onde
+    "uf", "nome_municipio", "br", "km", "trecho_km_inicio", "latitude", "longitude",
+    "regional", "delegacia", "uop",
+    # o acidente
+    "causa_acidente", "tipo_acidente", "classificacao_acidente", "condicao_meteorologica",
+    "sentido_via", "tipo_pista", "uso_solo_urbano", "tracado_via", "acidente_fatal",
+    "acidente_qtd_veiculos", "acidente_qtd_envolvidos", "acidente_ilesos", "acidente_feridos_leves",
+    "acidente_feridos_graves", "acidente_mortos",
+    # o veículo
+    "tipo_veiculo", "fabricante", "modelo", "ano_fabricacao", "idade_veiculo", "faixa_idade_veiculo",
+    "veiculo_qtd_envolvidos", "veiculo_mortos",
+    # a pessoa
+    "tipo_envolvido", "estado_fisico", "idade", "faixa_etaria", "sexo",
+    "_atualizado_em",
+]
 
 
 def main():
     spark = SparkSession.builder.appName("silver_para_gold").getOrCreate()
+    spark.conf.set("spark.sql.sources.partitionOverwriteMode", "static")
 
-    acidente = spark.read.parquet(f"{SILVER}/acidente").cache()
-    veiculo = spark.read.parquet(f"{SILVER}/veiculo")
-    envolvido = spark.read.parquet(f"{SILVER}/envolvido")
+    # --- silver, com prefixo nas medidas de cada grão ---------------------------
+    acidente = (spark.read.parquet(f"{SILVER}/acidente")
+                .drop("tracado_via_lista", "_processado_em")
+                .withColumnRenamed("qtd_veiculos", "acidente_qtd_veiculos")
+                .withColumnRenamed("qtd_envolvidos", "acidente_qtd_envolvidos")
+                .withColumnRenamed("ilesos", "acidente_ilesos")
+                .withColumnRenamed("feridos_leves", "acidente_feridos_leves")
+                .withColumnRenamed("feridos_graves", "acidente_feridos_graves")
+                .withColumnRenamed("mortos", "acidente_mortos"))
 
-    # 1. Série mensal por UF
-    gravar(com_taxas(acidente.groupBy("ano", "mes", "uf").agg(*medidas_acidente()))
-           .orderBy("ano", "mes", "uf"), "indicadores_mensais_uf")
+    veiculo = (spark.read.parquet(f"{SILVER}/veiculo")
+               .select("id_veiculo", "id_acidente", "tipo_veiculo", "fabricante", "modelo",
+                       "ano_fabricacao", "idade_veiculo", "faixa_idade_veiculo",
+                       F.col("qtd_envolvidos").alias("veiculo_qtd_envolvidos"),
+                       F.col("mortos").alias("veiculo_mortos")))
 
-    # 2. Causas
-    gravar(com_taxas(acidente.groupBy("ano", "causa_acidente").agg(*medidas_acidente()))
-           .orderBy("ano", F.desc("qtd_acidentes")), "acidentes_por_causa")
+    envolvido = (spark.read.parquet(f"{SILVER}/envolvido")
+                 .select("id_pessoa", "id_acidente", "id_veiculo", "tipo_envolvido",
+                         "estado_fisico", "idade", "faixa_etaria", "sexo"))
 
-    # 3. Tipos de acidente
-    gravar(com_taxas(acidente.groupBy("ano", "tipo_acidente").agg(*medidas_acidente()))
-           .orderBy("ano", F.desc("qtd_acidentes")), "acidentes_por_tipo")
+    # --- esqueleto da OBT: quais linhas existem ---------------------------------
+    nulo = F.lit(None).cast("bigint")
+    linhas_pessoa = (envolvido.select("id_acidente", "id_veiculo", "id_pessoa")
+                     .withColumn("tipo_registro", F.lit("pessoa")))
+    linhas_veiculo = (veiculo.select("id_acidente", "id_veiculo")
+                      .join(envolvido.select("id_veiculo").where(F.col("id_veiculo").isNotNull()).distinct(),
+                            "id_veiculo", "left_anti")
+                      .withColumn("id_pessoa", nulo)
+                      .withColumn("tipo_registro", F.lit("veiculo_sem_pessoa")))
+    com_linha = linhas_pessoa.select("id_acidente").union(linhas_veiculo.select("id_acidente")).distinct()
+    linhas_acidente = (acidente.select("id_acidente")
+                       .join(com_linha, "id_acidente", "left_anti")
+                       .withColumn("id_veiculo", nulo)
+                       .withColumn("id_pessoa", nulo)
+                       .withColumn("tipo_registro", F.lit("acidente_sem_veiculo")))
+    esqueleto = linhas_pessoa.unionByName(linhas_veiculo).unionByName(linhas_acidente)
 
-    # 4. Quando acontecem
-    gravar(com_taxas(acidente.groupBy("ano", "dia_semana_num", "dia_semana", "hora", "fase_dia")
-                     .agg(*medidas_acidente()))
-           .orderBy("ano", "dia_semana_num", "hora"), "acidentes_por_horario")
+    # --- junta os atributos dos três grãos ---------------------------------------
+    obt = (esqueleto
+           .join(acidente, "id_acidente")
+           .join(veiculo.drop("id_acidente"), "id_veiculo", "left")
+           .join(envolvido.drop("id_acidente", "id_veiculo"), "id_pessoa", "left"))
 
-    # 5. Condições da via e do tempo
-    gravar(com_taxas(acidente.groupBy("ano", "condicao_meteorologica", "tipo_pista", "fase_dia")
-                     .agg(*medidas_acidente()))
-           .orderBy("ano", F.desc("qtd_acidentes")), "condicoes_via")
+    # --- contadores 0/1 ----------------------------------------------------------
+    ordem = [F.col("id_veiculo").asc_nulls_last(), F.col("id_pessoa").asc_nulls_last()]
+    por_acidente = Window.partitionBy("id_acidente").orderBy(*ordem)
+    por_veiculo = Window.partitionBy("id_veiculo").orderBy(F.col("id_pessoa").asc_nulls_last())
+    estado = F.col("estado_fisico")
 
-    # 6. Trechos críticos: BR + UF + faixa de 10 km, no período todo
-    ranking = Window.orderBy(F.desc("mortos"), F.desc("qtd_acidentes"))
-    trechos = (acidente.where(F.col("br").isNotNull() & F.col("km").isNotNull())
-               .withColumn("km_inicio", (F.floor(F.col("km") / 10) * 10).cast("int"))
-               .withColumn("km_fim", F.col("km_inicio") + 10)
-               .groupBy("uf", "br", "km_inicio", "km_fim")
-               .agg(*medidas_acidente(),
-                    F.first("nome_municipio", ignorenulls=True).alias("municipio_referencia"),
-                    F.round(F.avg("latitude"), 6).alias("latitude_media"),
-                    F.round(F.avg("longitude"), 6).alias("longitude_media")))
-    trechos = com_taxas(trechos).withColumn("ranking_mortos", F.row_number().over(ranking))
-    gravar(trechos.orderBy("ranking_mortos"), "trechos_criticos")
+    obt = (obt
+           .withColumn("conta_acidente", (F.row_number().over(por_acidente) == 1).cast("int"))
+           .withColumn("conta_veiculo",
+                       F.when(F.col("id_veiculo").isNull(), 0)
+                       .otherwise((F.row_number().over(por_veiculo) == 1).cast("int")))
+           .withColumn("conta_pessoa", F.col("id_pessoa").isNotNull().cast("int"))
+           .withColumn("pessoa_ilesa", F.coalesce((estado == "Ileso").cast("int"), F.lit(0)))
+           .withColumn("pessoa_ferido_leve", F.coalesce((estado == "Lesões Leves").cast("int"), F.lit(0)))
+           .withColumn("pessoa_ferido_grave", F.coalesce((estado == "Lesões Graves").cast("int"), F.lit(0)))
+           .withColumn("pessoa_obito", F.coalesce((estado == "Óbito").cast("int"), F.lit(0)))
+           # pedestre/ciclista sem veículo registrado
+           .withColumn("tipo_veiculo",
+                       F.when(F.col("id_veiculo").isNull() & F.col("id_pessoa").isNotNull(), F.lit("Sem veículo"))
+                       .otherwise(F.col("tipo_veiculo")))
+           .withColumn("trecho_km_inicio", (F.floor(F.col("km") / 10) * 10).cast("int"))
+           .withColumn("_atualizado_em", F.current_timestamp())
+           .select(*COLUNAS_OBT))
 
-    # 7. Perfil das pessoas envolvidas
-    gravar(envolvido.groupBy("ano", "tipo_envolvido", "faixa_etaria", "sexo", "estado_fisico")
-           .agg(F.count("*").alias("qtd_pessoas"))
-           .orderBy("ano", "tipo_envolvido", "faixa_etaria"), "perfil_vitimas")
+    destino = f"{GOLD}/{NOME_OBT}"
+    obt.write.mode("overwrite").partitionBy("ano").parquet(destino)
 
-    # 8. Veículos
-    gravar(veiculo.groupBy("ano", "tipo_veiculo", "faixa_idade_veiculo")
-           .agg(F.count("*").alias("qtd_veiculos"),
-                F.countDistinct("id_acidente").alias("qtd_acidentes"),
-                F.sum("qtd_envolvidos").alias("qtd_ocupantes"),
-                F.sum("feridos_graves").alias("feridos_graves"),
-                F.sum("mortos").alias("mortos"))
-           .withColumn("mortos_por_100_veiculos", F.round(F.col("mortos") * 100.0 / F.col("qtd_veiculos"), 2))
-           .orderBy("ano", F.desc("qtd_veiculos")), "veiculos_envolvidos")
+    # --- conferência: a OBT tem de reproduzir os totais da silver ----------------
+    gravada = spark.read.parquet(destino)
+    totais = gravada.agg(F.count("*").alias("linhas"),
+                         F.sum("conta_acidente").alias("acidentes"),
+                         F.sum("conta_veiculo").alias("veiculos"),
+                         F.sum("conta_pessoa").alias("pessoas"),
+                         F.sum("pessoa_obito").alias("mortos")).first()
+    esperado = {
+        "acidentes": acidente.count(),
+        "veiculos": veiculo.count(),
+        "pessoas": envolvido.count(),
+        "mortos": acidente.agg(F.sum("acidente_mortos")).first()[0],
+    }
+    print(f"[gold] {NOME_OBT} -> {destino} ({totais['linhas']} linhas)")
+    divergencias = []
+    for chave, valor in esperado.items():
+        ok = totais[chave] == valor
+        print(f"[gold]   {chave:<10} OBT={totais[chave]:>9}  silver={valor:>9}  {'ok' if ok else 'DIVERGENTE'}")
+        if not ok:
+            divergencias.append(chave)
 
     spark.stop()
+    if divergencias:
+        raise SystemExit(f"OBT não bate com a silver em: {', '.join(divergencias)}")
 
 
 if __name__ == "__main__":

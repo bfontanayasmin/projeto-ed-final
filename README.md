@@ -13,9 +13,17 @@ Fluxo dos dados:
 
 ```
 CSVs (Datasets/) ──COPY──▶ Postgres staging ──ETL 3FN──▶ Postgres schema prf ──Spark (JDBC)──▶ MinIO s3a://bronze/prf/
+                                                                                                   │
+            s3a://gold/prf/obt_acidentes/ ◀──Spark── s3a://silver/prf/{acidente,veiculo,envolvido}/ ◀──Spark──┘
 ```
 
-> **Status:** o Postgres sobe já com os CSVs carregados e normalizados (schema `prf`, 18 tabelas). O MinIO cria os buckets `bronze`, `silver` e `gold`, e o job `postgres_para_bronze.py` copia as 18 tabelas para a camada bronze em Parquet. As camadas silver e gold ainda não têm jobs.
+| Camada | Onde | Modelo |
+|---|---|---|
+| Bronze | `s3a://bronze/prf/<tabela>/` | Cópia fiel das 18 tabelas 3FN do schema `prf` |
+| Silver | `s3a://silver/prf/{acidente,veiculo,envolvido}/` | 3 tabelas desnormalizadas, uma por grão |
+| Gold | `s3a://gold/prf/obt_acidentes/` | OBT (One Big Table): uma tabela larga, 1 linha por pessoa envolvida |
+
+> **Status:** o Postgres sobe já com os CSVs carregados e normalizados (schema `prf`, 18 tabelas). O MinIO cria os buckets `bronze`, `silver` e `gold`, e o job `postgres_para_bronze.py` copia as 18 tabelas para a camada bronze em Parquet. Os jobs `bronze_para_silver.py` e `silver_para_gold.py` montam a silver e a gold (OBT).
 
 ## Estrutura do projeto
 
@@ -37,6 +45,8 @@ projeto-ed-final/
 │   └── guia_dbeaver_normalizacao.md   # modelo 3FN e execução manual pelo DBeaver
 ├── scripts/                    # montada no Spark em /opt/spark-apps
 │   ├── postgres_para_bronze.py # job: schema prf (Postgres) → s3a://bronze/prf/
+│   ├── bronze_para_silver.py   # job: bronze → s3a://silver/prf/ (acidente, veiculo, envolvido)
+│   ├── silver_para_gold.py     # job: silver → s3a://gold/prf/obt_acidentes/ (OBT)
 │   └── sql/                    # montada no Postgres em /docker-entrypoint-initdb.d
 │       ├── 01_ddl_schema_prf.sql
 │       ├── 02_carga_staging.sql        # COPY dos 4 CSVs para staging.acidentes_raw
@@ -138,6 +148,29 @@ docker exec -it ed-spark-master /opt/spark/bin/spark-submit --master spark://spa
 
 O job lê as 18 tabelas do schema `prf` e grava cada uma em Parquet em `s3a://bronze/prf/<tabela>/`, com a coluna extra `_ingerido_em`. Ao final de cada tabela ele imprime uma linha `[bronze] prf.<tabela> -> ... (N linhas)`. A execução leva cerca de 1 minuto, e o resultado aparece no console do MinIO, no bucket `bronze`.
 
+### 5. Gerar a silver e a gold
+
+```bash
+docker exec -it ed-spark-master /opt/spark/bin/spark-submit --master spark://spark-master:7077 /opt/spark-apps/bronze_para_silver.py
+```
+
+```bash
+docker exec -it ed-spark-master /opt/spark/bin/spark-submit --master spark://spark-master:7077 /opt/spark-apps/silver_para_gold.py
+```
+
+A gold é uma **OBT** (`s3a://gold/prf/obt_acidentes/`, particionada por `ano`): uma única tabela larga com os dados do acidente, do veículo e da pessoa na mesma linha. O grão é **1 linha por pessoa envolvida**. Veículos sem pessoa registrada e acidentes sem veículo nem pessoa também ganham uma linha cada, e a coluna `tipo_registro` diz qual é o caso.
+
+Como os dados do acidente e do veículo se repetem nas linhas, some sempre pelas colunas de contagem 0/1:
+
+| Para contar | Use |
+|---|---|
+| Acidentes | `SUM(conta_acidente)` |
+| Veículos | `SUM(conta_veiculo)` |
+| Pessoas | `SUM(conta_pessoa)` |
+| Ilesos, feridos leves, feridos graves, mortos | `SUM(pessoa_ilesa)`, `SUM(pessoa_ferido_leve)`, `SUM(pessoa_ferido_grave)`, `SUM(pessoa_obito)` |
+
+Ao final, o job confere se os totais da OBT batem com a silver (acidentes, veículos, pessoas e mortos) e falha se algum divergir.
+
 Para outros jobs, coloque o script em `scripts/` e troque o nome do arquivo no comando.
 
 ### Parar
@@ -219,5 +252,5 @@ O caminho acima supõe que o CSV foi copiado para `lake/`, que é a pasta montad
 - [x] Configurar o Spark para ler e gravar no MinIO (`s3a://`, `hadoop-aws`)
 - [x] Carregar os CSVs no PostgreSQL de origem
 - [x] Adicionar um `.env.example` ao repositório
-- [ ] Job da camada silver (bronze → `s3a://silver/`)
-- [ ] Job da camada gold (indicadores em `s3a://gold/`)
+- [x] Job da camada silver (bronze → `s3a://silver/`)
+- [x] Job da camada gold (OBT em `s3a://gold/prf/obt_acidentes/`)
